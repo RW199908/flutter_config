@@ -23,3 +23,6 @@ flutter:
         pluginClass: FlutterConfigPlugin
       ios:
         pluginClass: FlutterConfigPlugin
+      ohos:
+        package: com.byneapp.flutter_config
+        pluginClass: FlutterConfigPlugin

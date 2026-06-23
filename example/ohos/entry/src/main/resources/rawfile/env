@@ -1,2 +1,3 @@
-APP_NAME="(PROD)Flutter Config"
-FABRIC_ID=ProductionID555
+APP_NAME="(DEV)Flutter Config"
+FABRIC_ID=DEvId555
+FLAVOR=develop

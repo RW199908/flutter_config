@@ -54,68 +54,68 @@ export default class FlutterConfigPlugin implements FlutterPlugin, MethodCallHan
    * 所以 rawfile 中的文件命名为 "env" 而非 ".env"
    */
   private loadEnvVariables(result: MethodResult): void {
-    try {
-      // ---- 1. 读取 env 文件中的自定义变量 ----
-      let envMap: Record<string, Object> = {};
+    // ---- 1. 读取 env 文件中的自定义变量 ----
+    let envMap: Record<string, Object> = {};
+    let envLoaded: boolean = false;
 
-      if (this.binding !== null) {
-        try {
-          let resMgr = this.binding.getApplicationContext().resourceManager;
-          let envBytes: Uint8Array = resMgr.getRawFileContentSync('env');
-
-          // Uint8Array → UTF-8 string
-          let textDecoder = util.TextDecoder.create('utf-8');
-          let text: string = textDecoder.decodeToString(envBytes);
-
-          // Strip UTF-8 BOM if present (EF BB BF → U+FEFF)
-          if (text.charCodeAt(0) === 0xFEFF) {
-            text = text.substring(1);
-          }
-
-          // 解析 KEY=VALUE（与 Android dotenv.gradle 保持一致的正则）
-          let lines: string[] = text.split('\n');
-          let pattern: RegExp = /^\s*(?:export\s+|)([\w\d.\-_]+)\s*=\s*['"]?(.*?)?['"]?\s*$/;
-
-          for (let line of lines) {
-            let match: RegExpMatchArray | null = line.match(pattern);
-            if (match && match.length >= 3) {
-              envMap[match[1]] = match[2].replace(/"/g, '\\"');
-            }
-          }
-        } catch (e) {
-          // rawfile/env 不存在或读取失败，envMap 保持为空
-        }
-      }
-
-      // ---- 2. 追加系统字段（与 Android BuildConfig 反射字段一致）----
+    if (this.binding !== null) {
       try {
-        let bundleInfo: bundleManager.BundleInfo =
-          bundleManager.getBundleInfoForSelfSync(bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_APPLICATION);
+        let resMgr = this.binding.getApplicationContext().resourceManager;
+        let envBytes: Uint8Array = resMgr.getRawFileContentSync('env');
 
-        // VERSION_NAME
-        envMap['VERSION_NAME'] = bundleInfo.versionName;
-        // APPLICATION_ID (bundleName)
-        envMap['APPLICATION_ID'] = bundleInfo.name;
-        // VERSION_CODE
-        envMap['VERSION_CODE'] = bundleInfo.versionCode;
-        // DEBUG
-        envMap['DEBUG'] = bundleInfo.appInfo.debug;
+        // Uint8Array → UTF-8 string
+        let textDecoder = util.TextDecoder.create('utf-8');
+        let text: string = textDecoder.decodeToString(envBytes);
+
+        // Strip UTF-8 BOM if present (EF BB BF → U+FEFF)
+        if (text.charCodeAt(0) === 0xFEFF) {
+          text = text.substring(1);
+        }
+
+        // 解析 KEY=VALUE（与 Android dotenv.gradle 保持一致的正则）
+        let lines: string[] = text.split('\n');
+        let pattern: RegExp = /^\s*(?:export\s+|)([\w\d.\-_]+)\s*=\s*['"]?(.*?)?['"]?\s*$/;
+
+        for (let line of lines) {
+          let match: RegExpMatchArray | null = line.match(pattern);
+          if (match && match.length >= 3) {
+            envMap[match[1]] = match[2].replace(/"/g, '\\"');
+          }
+        }
+
+        envLoaded = true;
       } catch (e) {
-        // bundleManager 获取失败时跳过系统字段
+        // rawfile/env 不存在或读取失败
       }
+    }
 
-      // ---- 3. 返回给 Dart ----
-      result.success(envMap);
-
-      // ---- 4. 缓存供原生侧静态方法使用 ----
-      FlutterConfigPlugin.cachedEnv = {};
-      let keys: string[] = Object.keys(envMap);
-      for (let i = 0; i < keys.length; i++) {
-        FlutterConfigPlugin.cachedEnv[keys[i]] = String(envMap[keys[i]]);
-      }
-    } catch (e) {
-      // 兜底：返回空 map，与 Android/iOS 行为一致
+    // ---- 2. env 文件不存在或为空时，返回空 Map（与 iOS 行为一致）----
+    if (!envLoaded || Object.keys(envMap).length === 0) {
       result.success({});
+      return;
+    }
+
+    // ---- 3. env 文件存在时，追加系统字段（与 Android BuildConfig 反射字段一致）----
+    try {
+      let bundleInfo: bundleManager.BundleInfo =
+        bundleManager.getBundleInfoForSelfSync(bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_APPLICATION);
+
+      envMap['VERSION_NAME'] = bundleInfo.versionName;
+      envMap['APPLICATION_ID'] = bundleInfo.name;
+      envMap['VERSION_CODE'] = bundleInfo.versionCode;
+      envMap['DEBUG'] = bundleInfo.appInfo.debug;
+    } catch (e) {
+      // bundleManager 获取失败时跳过系统字段
+    }
+
+    // ---- 4. 返回给 Dart ----
+    result.success(envMap);
+
+    // ---- 5. 缓存供原生侧静态方法使用 ----
+    FlutterConfigPlugin.cachedEnv = {};
+    let keys: string[] = Object.keys(envMap);
+    for (let i = 0; i < keys.length; i++) {
+      FlutterConfigPlugin.cachedEnv[keys[i]] = String(envMap[keys[i]]);
     }
   }
 

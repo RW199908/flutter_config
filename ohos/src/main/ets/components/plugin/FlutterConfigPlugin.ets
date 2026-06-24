@@ -46,16 +46,17 @@ export default class FlutterConfigPlugin implements FlutterPlugin, MethodCallHan
 
   /**
    * 从 rawfile 读取 env 文件并补充系统字段
+   *
+   * rawfile/env 由 Hvigor 构建脚本从项目根目录的 .env 文件自动生成，
+   * 开发者无需手动在 rawfile 下放置 env 文件。
+   *
    * 与 Android FlutterConfigPlugin.kt 行为一致：
    *   1. 读取 .env 文件中的自定义变量
    *   2. 追加 VERSION_NAME、APPLICATION_ID、VERSION_CODE、DEBUG 等系统字段
-   *
-   * 注意：鸿蒙 getRawFileContentSync 不支持以 '.' 开头的文件名（会报 Invalid relative path）
-   * 所以 rawfile 中的文件命名为 "env" 而非 ".env"
    */
   private loadEnvVariables(result: MethodResult): void {
-    // ---- 1. 读取 env 文件中的自定义变量 ----
-    let envMap: Record<string, Object> = {};
+    // ---- 1. 从 rawfile 读取 env 变量 ----
+    let envVars: Record<string, Object> = {};
     let envLoaded: boolean = false;
 
     if (this.binding !== null) {
@@ -79,7 +80,7 @@ export default class FlutterConfigPlugin implements FlutterPlugin, MethodCallHan
         for (let line of lines) {
           let match: RegExpMatchArray | null = line.match(pattern);
           if (match && match.length >= 3) {
-            envMap[match[1]] = match[2].replace(/"/g, '\\"');
+            envVars[match[1]] = match[2].replace(/"/g, '\\"');
           }
         }
 
@@ -90,28 +91,63 @@ export default class FlutterConfigPlugin implements FlutterPlugin, MethodCallHan
     }
 
     // ---- 2. env 文件不存在或为空时，返回空 Map（与 iOS 行为一致）----
-    if (!envLoaded || Object.keys(envMap).length === 0) {
+    if (!envLoaded || Object.keys(envVars).length === 0) {
       result.success({});
       return;
     }
 
-    // ---- 3. env 文件存在时，追加系统字段（与 Android BuildConfig 反射字段一致）----
+    // ---- 3. 获取系统字段 ----
+    let versionName: string = '';
+    let applicationId: string = '';
+    let versionCode: number = 0;
+    let debug: boolean = false;
+
     try {
       let bundleInfo: bundleManager.BundleInfo =
         bundleManager.getBundleInfoForSelfSync(bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_APPLICATION);
 
-      envMap['VERSION_NAME'] = bundleInfo.versionName;
-      envMap['APPLICATION_ID'] = bundleInfo.name;
-      envMap['VERSION_CODE'] = bundleInfo.versionCode;
-      envMap['DEBUG'] = bundleInfo.appInfo.debug;
+      versionName = bundleInfo.versionName;
+      applicationId = bundleInfo.name;
+      versionCode = bundleInfo.versionCode;
+      debug = bundleInfo.appInfo.debug;
     } catch (e) {
       // bundleManager 获取失败时跳过系统字段
     }
 
-    // ---- 4. 返回给 Dart ----
+    // ---- 4. 按 Android 字段顺序构建返回 Map ----
+    //    顺序与 Android BuildConfig declaredFields 反射顺序一致
+    let envMap: Record<string, Object> = {};
+
+    envMap['VERSION_NAME'] = versionName;
+    envMap['APPLICATION_ID'] = applicationId;
+    // APP_NAME 来自 .env
+    if (envVars['APP_NAME'] !== undefined) {
+      envMap['APP_NAME'] = envVars['APP_NAME'];
+    }
+    envMap['BUILD_TYPE'] = debug ? 'debug' : 'release';
+    // FABRIC_ID 来自 .env
+    if (envVars['FABRIC_ID'] !== undefined) {
+      envMap['FABRIC_ID'] = envVars['FABRIC_ID'];
+    }
+    envMap['VERSION_CODE'] = versionCode;
+    envMap['DEBUG'] = debug;
+    // FLAVOR 等价于 Android BuildConfig.FLAVOR，来自 .env 的 PRODUCT_NAME
+    if (envVars['PRODUCT_NAME'] !== undefined) {
+      envMap['FLAVOR'] = envVars['PRODUCT_NAME'];
+    }
+
+    // 追加 .env 中除已处理字段外的其他变量
+    let handledKeys: string[] = ['APP_NAME', 'FABRIC_ID', 'PRODUCT_NAME'];
+    for (let key of Object.keys(envVars)) {
+      if (!handledKeys.includes(key)) {
+        envMap[key] = envVars[key];
+      }
+    }
+
+    // ---- 5. 返回给 Dart ----
     result.success(envMap);
 
-    // ---- 5. 缓存供原生侧静态方法使用 ----
+    // ---- 6. 缓存供原生侧静态方法使用 ----
     FlutterConfigPlugin.cachedEnv = {};
     let keys: string[] = Object.keys(envMap);
     for (let i = 0; i < keys.length; i++) {

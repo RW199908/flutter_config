@@ -53,6 +53,7 @@ export default class FlutterConfigPlugin implements FlutterPlugin, MethodCallHan
    * 与 Android FlutterConfigPlugin.kt 行为一致：
    *   1. 读取 .env 文件中的自定义变量
    *   2. 追加 VERSION_NAME、APPLICATION_ID、VERSION_CODE、DEBUG 等系统字段
+   *   3. 无 .env 文件时，仍返回系统字段（与安卓 BuildConfig 行为一致）
    */
   private loadEnvVariables(result: MethodResult): void {
     // ---- 1. 从 rawfile 读取 env 变量 ----
@@ -86,17 +87,11 @@ export default class FlutterConfigPlugin implements FlutterPlugin, MethodCallHan
 
         envLoaded = true;
       } catch (e) {
-        // rawfile/env 不存在或读取失败
+        // rawfile/env 不存在或读取失败，继续获取系统字段
       }
     }
 
-    // ---- 2. env 文件不存在或为空时，返回空 Map（与 iOS 行为一致）----
-    if (!envLoaded || Object.keys(envVars).length === 0) {
-      result.success({});
-      return;
-    }
-
-    // ---- 3. 获取系统字段 ----
+    // ---- 2. 获取系统字段（无论env是否存在，始终获取，与安卓BuildConfig行为一致）----
     let versionName: string = '';
     let applicationId: string = '';
     let versionCode: number = 0;
@@ -112,6 +107,13 @@ export default class FlutterConfigPlugin implements FlutterPlugin, MethodCallHan
       debug = bundleInfo.appInfo.debug;
     } catch (e) {
       // bundleManager 获取失败时跳过系统字段
+    }
+
+    // ---- 3. 仅当既无env变量又无系统字段时返回空Map ----
+    let hasSystemFields: boolean = versionName !== '' || applicationId !== '';
+    if (!envLoaded && !hasSystemFields) {
+      result.success({});
+      return;
     }
 
     // ---- 4. 按 Android 字段顺序构建返回 Map ----

@@ -133,13 +133,14 @@ export default class FlutterConfigPlugin implements FlutterPlugin, MethodCallHan
     }
     envMap['VERSION_CODE'] = versionCode;
     envMap['DEBUG'] = debug;
-    // FLAVOR 等价于 Android BuildConfig.FLAVOR，来自 .env 的 PRODUCT_NAME
-    if (envVars['PRODUCT_NAME'] !== undefined) {
-      envMap['FLAVOR'] = envVars['PRODUCT_NAME'];
+    // PRODUCT 来自构建系统自动注入（dotenv.ts 写入 rawfile/env）
+    // 等价于 Android BuildConfig.FLAVOR，鸿蒙用 PRODUCT 命名（对应 build-profile.json5 的 products）
+    if (envVars['PRODUCT'] !== undefined) {
+      envMap['PRODUCT'] = envVars['PRODUCT'];
     }
 
     // 追加 .env 中除已处理字段外的其他变量
-    let handledKeys: string[] = ['APP_NAME', 'FABRIC_ID', 'PRODUCT_NAME'];
+    let handledKeys: string[] = ['APP_NAME', 'FABRIC_ID', 'PRODUCT'];
     for (let key of Object.keys(envVars)) {
       if (!handledKeys.includes(key)) {
         envMap[key] = envVars[key];

@@ -119,8 +119,28 @@ function createDotenvPlugin(options?: DotenvPluginOptions) {
         for (const key of Object.keys(envVars)) {
           envContent += `${key}=${envVars[key]}\n`;
         }
+        // 从 build-profile.json5 读取当前 product 名称，注入 PRODUCT 字段
+        // 等价于 Android BuildConfig.FLAVOR
+        let product = '';
+        try {
+          const appBuildProfilePath = path.join(entryDir, '../build-profile.json5');
+          if (fs.existsSync(appBuildProfilePath)) {
+            const profileContent = fs.readFileSync(appBuildProfilePath, 'utf-8');
+            const productsMatch = profileContent.match(/"products"\s*:\s*\[([\s\S]*?)\]/);
+            if (productsMatch) {
+              const nameMatch = productsMatch[1].match(/"name"\s*:\s*"([^"]+)"/);
+              if (nameMatch) {
+                product = nameMatch[1];
+              }
+            }
+          }
+        } catch (e) {}
+        if (product) {
+          envContent += `PRODUCT=${product}\n`;
+        }
         fs.writeFileSync(path.join(rawfileDir, 'env'), envContent, 'utf-8');
-        console.log(`[flutter_config] Wrote ${Object.keys(envVars).length} variables to rawfile/env`);
+        console.log(`[flutter_config] Wrote ${Object.keys(envVars).length} variables to rawfile/env` +
+          (product ? `, PRODUCT=${product}` : ''));
       } catch (e) {
         console.warn('[flutter_config] Failed to write rawfile/env:', e);
       }

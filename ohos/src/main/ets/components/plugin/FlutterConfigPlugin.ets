@@ -24,23 +24,36 @@ export default class FlutterConfigPlugin implements FlutterPlugin, MethodCallHan
   }
 
   onAttachedToEngine(binding: FlutterPluginBinding): void {
-    this.channel = new MethodChannel(binding.getBinaryMessenger(), "flutter_config");
-    this.channel.setMethodCallHandler(this);
-    this.binding = binding;
+    try {
+      this.channel = new MethodChannel(binding.getBinaryMessenger(), "flutter_config");
+      this.channel.setMethodCallHandler(this);
+      this.binding = binding;
+    } catch (e) {
+      console.error(`[${TAG}] onAttachedToEngine failed: ${e}`);
+    }
   }
 
   onDetachedFromEngine(binding: FlutterPluginBinding): void {
-    if (this.channel != null) {
-      this.channel.setMethodCallHandler(null);
+    try {
+      if (this.channel != null) {
+        this.channel.setMethodCallHandler(null);
+      }
+      this.binding = null;
+    } catch (e) {
+      console.error(`[${TAG}] onDetachedFromEngine failed: ${e}`);
     }
-    this.binding = null;
   }
 
   onMethodCall(call: MethodCall, result: MethodResult): void {
-    if (call.method == "loadEnvVariables") {
-      this.loadEnvVariables(result);
-    } else {
-      result.notImplemented();
+    try {
+      if (call.method == "loadEnvVariables") {
+        this.loadEnvVariables(result);
+      } else {
+        result.notImplemented();
+      }
+    } catch (e) {
+      console.error(`[${TAG}] onMethodCall error for '${call.method}': ${e}`);
+      result.error("FLUTTER_CONFIG_ERROR", `Method call error: ${e}`, null);
     }
   }
 
@@ -164,10 +177,20 @@ export default class FlutterConfigPlugin implements FlutterPlugin, MethodCallHan
    * 注意：必须在 loadEnvVariables 被调用后才有数据
    */
   static env(): Record<string, string> {
-    return FlutterConfigPlugin.cachedEnv;
+    try {
+      return FlutterConfigPlugin.cachedEnv;
+    } catch (e) {
+      console.error(`[${TAG}] env() failed: ${e}`);
+      return {};
+    }
   }
 
   static envFor(key: string): string | undefined {
-    return FlutterConfigPlugin.cachedEnv[key];
+    try {
+      return FlutterConfigPlugin.cachedEnv[key];
+    } catch (e) {
+      console.error(`[${TAG}] envFor('${key}') failed: ${e}`);
+      return undefined;
+    }
   }
 }

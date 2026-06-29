@@ -87,14 +87,18 @@ function createDotenvPlugin(options?: DotenvPluginOptions) {
       let envPath = path.join(flutterProjectRoot, envFile);
       let content = '';
 
-      if (fs.existsSync(envPath)) {
-        content = fs.readFileSync(envPath, 'utf-8');
-        console.log(`[flutter_config] Reading env from: ${envPath}`);
-      } else if (fs.existsSync(envFile)) {
-        content = fs.readFileSync(envFile, 'utf-8');
-        console.log(`[flutter_config] Reading env from: ${envFile}`);
-      } else {
-        console.warn('[flutter_config] .env file not found at ' + envPath);
+      try {
+        if (fs.existsSync(envPath)) {
+          content = fs.readFileSync(envPath, 'utf-8');
+          console.log(`[flutter_config] Reading env from: ${envPath}`);
+        } else if (fs.existsSync(envFile)) {
+          content = fs.readFileSync(envFile, 'utf-8');
+          console.log(`[flutter_config] Reading env from: ${envFile}`);
+        } else {
+          console.warn('[flutter_config] .env file not found at ' + envPath);
+        }
+      } catch (e) {
+        console.warn('[flutter_config] Failed to read .env file: ' + e);
       }
 
       // 4. 解析 KEY=VALUE
@@ -102,11 +106,15 @@ function createDotenvPlugin(options?: DotenvPluginOptions) {
       const lines = content.split('\n');
       const envVars: Record<string, string> = {};
 
-      for (const line of lines) {
-        const match = line.match(pattern);
-        if (match && match.length >= 3) {
-          envVars[match[1]] = match[2].replace(/"/g, '\\"');
+      try {
+        for (const line of lines) {
+          const match = line.match(pattern);
+          if (match && match.length >= 3) {
+            envVars[match[1]] = match[2].replace(/"/g, '\\"');
+          }
         }
+      } catch (e) {
+        console.warn('[flutter_config] Failed to parse .env content: ' + e);
       }
 
       // 5. 写入 rawfile/env

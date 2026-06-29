@@ -17,6 +17,14 @@ const ENV_PATTERN: RegExp = /^\s*(?:export\s+|)([\w\d.\-_]+)\s*=\s*['"]?(.*?)?['
 /** 已在构建返回 Map 中按固定顺序处理的 key */
 const HANDLED_KEYS: string[] = ['APP_NAME', 'FABRIC_ID', 'PRODUCT'];
 
+/** 系统字段接口（ArkTS 要求对象字面量对应显式声明的类或接口） */
+interface SystemFields {
+  versionName: string;
+  applicationId: string;
+  versionCode: number;
+  debug: boolean;
+}
+
 export default class FlutterConfigPlugin implements FlutterPlugin, MethodCallHandler {
   private channel: MethodChannel | null = null;
   private binding: FlutterPluginBinding | null = null;
@@ -113,20 +121,22 @@ export default class FlutterConfigPlugin implements FlutterPlugin, MethodCallHan
    * 获取系统字段（versionName, applicationId, versionCode, debug）
    * 获取失败时返回默认值
    */
-  private getSystemFields(): { versionName: string; applicationId: string; versionCode: number; debug: boolean } {
+  private getSystemFields(): SystemFields {
     try {
       let bundleInfo: bundleManager.BundleInfo =
         bundleManager.getBundleInfoForSelfSync(bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_APPLICATION);
 
-      return {
+      let fields: SystemFields = {
         versionName: bundleInfo.versionName,
         applicationId: bundleInfo.name,
         versionCode: bundleInfo.versionCode,
         debug: bundleInfo.appInfo.debug,
       };
+      return fields;
     } catch (e) {
       console.warn(`[${TAG}] Failed to get bundle info: ${e}`);
-      return { versionName: '', applicationId: '', versionCode: 0, debug: false };
+      let defaults: SystemFields = { versionName: '', applicationId: '', versionCode: 0, debug: false };
+      return defaults;
     }
   }
 

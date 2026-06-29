@@ -11,6 +11,12 @@ import bundleManager from '@ohos.bundle.bundleManager';
 
 const TAG: string = "FlutterConfig";
 
+/** 解析 KEY=VALUE 的正则（与 Android dotenv.gradle 保持一致） */
+const ENV_PATTERN: RegExp = /^\s*(?:export\s+|)([\w\d.\-_]+)\s*=\s*['"]?(.*?)?['"]?\s*$/;
+
+/** 已在构建返回 Map 中按固定顺序处理的 key */
+const HANDLED_KEYS: string[] = ['APP_NAME', 'FABRIC_ID', 'PRODUCT'];
+
 export default class FlutterConfigPlugin implements FlutterPlugin, MethodCallHandler {
   private channel: MethodChannel | null = null;
   private binding: FlutterPluginBinding | null = null;
@@ -37,8 +43,10 @@ export default class FlutterConfigPlugin implements FlutterPlugin, MethodCallHan
     try {
       if (this.channel != null) {
         this.channel.setMethodCallHandler(null);
+        this.channel = null;
       }
       this.binding = null;
+      FlutterConfigPlugin.cachedEnv = {};
     } catch (e) {
       console.error(`[${TAG}] onDetachedFromEngine failed: ${e}`);
     }
@@ -58,6 +66,119 @@ export default class FlutterConfigPlugin implements FlutterPlugin, MethodCallHan
   }
 
   /**
+   * 从 rawfile 读取 env 文件并返回解析后的变量 Map
+   * 读取失败时返回 null
+   */
+  private readRawFileEnv(): Record<string, Object> | null {
+    if (this.binding === null) {
+      return null;
+    }
+    try {
+      let resMgr = this.binding.getApplicationContext().resourceManager;
+      let envBytes: Uint8Array = resMgr.getRawFileContentSync('env');
+
+      // Uint8Array → UTF-8 string
+      let textDecoder = util.TextDecoder.create('utf-8');
+      let text: string = textDecoder.decodeToString(envBytes);
+
+      // Strip UTF-8 BOM if present (EF BB BF → U+FEFF)
+      if (text.charCodeAt(0) === 0xFEFF) {
+        text = text.substring(1);
+      }
+
+      return this.parseEnvText(text);
+    } catch (e) {
+      console.warn(`[${TAG}] Failed to read rawfile/env: ${e}`);
+      return null;
+    }
+  }
+
+  /**
+   * 将 env 文本内容解析为 KEY=VALUE 的 Map
+   */
+  private parseEnvText(text: string): Record<string, Object> {
+    let envVars: Record<string, Object> = {};
+    let lines: string[] = text.split('\n');
+
+    for (let line of lines) {
+      let match: RegExpMatchArray | null = line.match(ENV_PATTERN);
+      if (match && match.length >= 3) {
+        envVars[match[1]] = match[2].replace(/"/g, '\\"');
+      }
+    }
+    return envVars;
+  }
+
+  /**
+   * 获取系统字段（versionName, applicationId, versionCode, debug）
+   * 获取失败时返回默认值
+   */
+  private getSystemFields(): { versionName: string; applicationId: string; versionCode: number; debug: boolean } {
+    try {
+      let bundleInfo: bundleManager.BundleInfo =
+        bundleManager.getBundleInfoForSelfSync(bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_APPLICATION);
+
+      return {
+        versionName: bundleInfo.versionName,
+        applicationId: bundleInfo.name,
+        versionCode: bundleInfo.versionCode,
+        debug: bundleInfo.appInfo.debug,
+      };
+    } catch (e) {
+      console.warn(`[${TAG}] Failed to get bundle info: ${e}`);
+      return { versionName: '', applicationId: '', versionCode: 0, debug: false };
+    }
+  }
+
+  /**
+   * 按 Android BuildConfig 字段顺序构建返回 Map
+   */
+  private buildEnvMap(
+    envVars: Record<string, Object>,
+    versionName: string,
+    applicationId: string,
+    versionCode: number,
+    debug: boolean,
+  ): Record<string, Object> {
+    let envMap: Record<string, Object> = {};
+
+    envMap['VERSION_NAME'] = versionName;
+    envMap['APPLICATION_ID'] = applicationId;
+    if (envVars['APP_NAME'] !== undefined) {
+      envMap['APP_NAME'] = envVars['APP_NAME'];
+    }
+    envMap['BUILD_TYPE'] = debug ? 'debug' : 'release';
+    if (envVars['FABRIC_ID'] !== undefined) {
+      envMap['FABRIC_ID'] = envVars['FABRIC_ID'];
+    }
+    envMap['VERSION_CODE'] = versionCode;
+    envMap['DEBUG'] = debug;
+    if (envVars['PRODUCT'] !== undefined) {
+      envMap['PRODUCT'] = envVars['PRODUCT'];
+    }
+
+    // 追加 .env 中除已处理字段外的其他变量
+    for (let key of Object.keys(envVars)) {
+      if (!HANDLED_KEYS.includes(key)) {
+        envMap[key] = envVars[key];
+      }
+    }
+
+    return envMap;
+  }
+
+  /**
+   * 缓存 envMap 供原生侧静态方法使用
+   */
+  private static cacheEnvMap(envMap: Record<string, Object>): void {
+    FlutterConfigPlugin.cachedEnv = {};
+    let keys: string[] = Object.keys(envMap);
+    for (let i = 0; i < keys.length; i++) {
+      FlutterConfigPlugin.cachedEnv[keys[i]] = String(envMap[keys[i]]);
+    }
+  }
+
+  /**
    * 从 rawfile 读取 env 文件并补充系统字段
    *
    * rawfile/env 由 Hvigor 构建脚本从项目根目录的 .env 文件自动生成，
@@ -69,106 +190,29 @@ export default class FlutterConfigPlugin implements FlutterPlugin, MethodCallHan
    *   3. 无 .env 文件时，仍返回系统字段（与安卓 BuildConfig 行为一致）
    */
   private loadEnvVariables(result: MethodResult): void {
-    // ---- 1. 从 rawfile 读取 env 变量 ----
-    let envVars: Record<string, Object> = {};
-    let envLoaded: boolean = false;
+    // 1. 从 rawfile 读取 env 变量
+    let rawEnv = this.readRawFileEnv();
+    let envLoaded: boolean = rawEnv !== null;
+    let envVars: Record<string, Object> = rawEnv ?? {};
 
-    if (this.binding !== null) {
-      try {
-        let resMgr = this.binding.getApplicationContext().resourceManager;
-        let envBytes: Uint8Array = resMgr.getRawFileContentSync('env');
+    // 2. 获取系统字段
+    let sys = this.getSystemFields();
 
-        // Uint8Array → UTF-8 string
-        let textDecoder = util.TextDecoder.create('utf-8');
-        let text: string = textDecoder.decodeToString(envBytes);
-
-        // Strip UTF-8 BOM if present (EF BB BF → U+FEFF)
-        if (text.charCodeAt(0) === 0xFEFF) {
-          text = text.substring(1);
-        }
-
-        // 解析 KEY=VALUE（与 Android dotenv.gradle 保持一致的正则）
-        let lines: string[] = text.split('\n');
-        let pattern: RegExp = /^\s*(?:export\s+|)([\w\d.\-_]+)\s*=\s*['"]?(.*?)?['"]?\s*$/;
-
-        for (let line of lines) {
-          let match: RegExpMatchArray | null = line.match(pattern);
-          if (match && match.length >= 3) {
-            envVars[match[1]] = match[2].replace(/"/g, '\\"');
-          }
-        }
-
-        envLoaded = true;
-      } catch (e) {
-        // rawfile/env 不存在或读取失败，继续获取系统字段
-      }
-    }
-
-    // ---- 2. 获取系统字段（无论env是否存在，始终获取，与安卓BuildConfig行为一致）----
-    let versionName: string = '';
-    let applicationId: string = '';
-    let versionCode: number = 0;
-    let debug: boolean = false;
-
-    try {
-      let bundleInfo: bundleManager.BundleInfo =
-        bundleManager.getBundleInfoForSelfSync(bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_APPLICATION);
-
-      versionName = bundleInfo.versionName;
-      applicationId = bundleInfo.name;
-      versionCode = bundleInfo.versionCode;
-      debug = bundleInfo.appInfo.debug;
-    } catch (e) {
-      // bundleManager 获取失败时跳过系统字段
-    }
-
-    // ---- 3. 仅当既无env变量又无系统字段时返回空Map ----
-    let hasSystemFields: boolean = versionName !== '' || applicationId !== '';
+    // 3. 仅当既无env变量又无系统字段时返回空Map
+    let hasSystemFields: boolean = sys.versionName !== '' || sys.applicationId !== '';
     if (!envLoaded && !hasSystemFields) {
       result.success({});
       return;
     }
 
-    // ---- 4. 按 Android 字段顺序构建返回 Map ----
-    //    顺序与 Android BuildConfig declaredFields 反射顺序一致
-    let envMap: Record<string, Object> = {};
+    // 4. 构建返回 Map
+    let envMap = this.buildEnvMap(envVars, sys.versionName, sys.applicationId, sys.versionCode, sys.debug);
 
-    envMap['VERSION_NAME'] = versionName;
-    envMap['APPLICATION_ID'] = applicationId;
-    // APP_NAME 来自 .env
-    if (envVars['APP_NAME'] !== undefined) {
-      envMap['APP_NAME'] = envVars['APP_NAME'];
-    }
-    envMap['BUILD_TYPE'] = debug ? 'debug' : 'release';
-    // FABRIC_ID 来自 .env
-    if (envVars['FABRIC_ID'] !== undefined) {
-      envMap['FABRIC_ID'] = envVars['FABRIC_ID'];
-    }
-    envMap['VERSION_CODE'] = versionCode;
-    envMap['DEBUG'] = debug;
-    // PRODUCT 来自构建系统自动注入（dotenv.ts 写入 rawfile/env）
-    // 等价于 Android BuildConfig.FLAVOR，鸿蒙用 PRODUCT 命名（对应 build-profile.json5 的 products）
-    if (envVars['PRODUCT'] !== undefined) {
-      envMap['PRODUCT'] = envVars['PRODUCT'];
-    }
-
-    // 追加 .env 中除已处理字段外的其他变量
-    let handledKeys: string[] = ['APP_NAME', 'FABRIC_ID', 'PRODUCT'];
-    for (let key of Object.keys(envVars)) {
-      if (!handledKeys.includes(key)) {
-        envMap[key] = envVars[key];
-      }
-    }
-
-    // ---- 5. 返回给 Dart ----
+    // 5. 返回给 Dart
     result.success(envMap);
 
-    // ---- 6. 缓存供原生侧静态方法使用 ----
-    FlutterConfigPlugin.cachedEnv = {};
-    let keys: string[] = Object.keys(envMap);
-    for (let i = 0; i < keys.length; i++) {
-      FlutterConfigPlugin.cachedEnv[keys[i]] = String(envMap[keys[i]]);
-    }
+    // 6. 缓存供原生侧静态方法使用
+    FlutterConfigPlugin.cacheEnvMap(envMap);
   }
 
   /**

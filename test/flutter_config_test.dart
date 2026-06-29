@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_config/flutter_config.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -110,6 +112,41 @@ void main() {
         () => FlutterConfig.loadEnvVariables(),
         throwsA(anything), // 类型转换异常
       );
+    });
+
+    test('loadEnvVariables() MethodChannel 超时未响应时应抛出 TimeoutException', () async {
+      TestDefaultBinaryMessengerBinding.instance?.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
+        // 模拟平台端长时间未响应
+        await Future.delayed(Duration(seconds: 10));
+        return {'TIMEOUT_KEY': 'value'};
+      });
+
+      // 设置 1 秒超时，远小于模拟的 10 秒延迟
+      expect(
+        () => FlutterConfig.loadEnvVariables().timeout(Duration(seconds: 1)),
+        throwsA(isA<TimeoutException>()),
+      );
+    });
+
+    test('loadEnvVariables() MethodChannel 超时后不应留下中间状态', () async {
+      // 先设置一个初始值
+      FlutterConfig.loadValueForTesting({'INITIAL': 'initial'});
+
+      TestDefaultBinaryMessengerBinding.instance?.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
+        await Future.delayed(Duration(seconds: 10));
+        return {'LATE_KEY': 'late_value'};
+      });
+
+      try {
+        await FlutterConfig.loadEnvVariables().timeout(Duration(seconds: 1));
+      } on TimeoutException {
+        // 预期超时
+      }
+
+      // 超时后 loadEnvVariables 未完成，内部状态应保持超时前的值
+      expect(FlutterConfig.get('INITIAL'), 'initial');
     });
   });
 

@@ -6,6 +6,10 @@ void main() {
     FlutterConfig.loadValueForTesting({});
   });
 
+  tearDown(() {
+    FlutterConfig.loadValueForTesting({});
+  });
+
   test('test variable should be available on test', () {
     FlutterConfig.loadValueForTesting({'BASE_URL': 'https://www.google.com'});
     final baseUrl = FlutterConfig.get('BASE_URL');

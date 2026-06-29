@@ -36,8 +36,8 @@ function createDotenvPlugin(options?: DotenvPluginOptions) {
   return {
     pluginId: 'flutter_config_dotenv',
     apply: () => {
-      let fs: any;
-      let path: any;
+      let fs: ESObject;
+      let path: ESObject;
       try {
         fs = require('fs');
         path = require('path');

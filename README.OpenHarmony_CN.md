@@ -126,7 +126,11 @@ FlutterConfig.variables.forEach((key, value) {
 
 支持通过不同的 `.env` 文件管理多环境配置，例如 `.env.dev`、`.env.staging`、`.env`（生产环境）。
 
-**鸿蒙端配置方式**：在 `entry/hvigorfile.ts` 中使用 `createDotenvPlugin` 指定环境文件：
+#### 4.1 指定环境文件
+
+**方式一：使用 `envFile` 参数**
+
+在 `entry/hvigorfile.ts` 中使用 `createDotenvPlugin` 指定环境文件：
 
 ```typescript
 import { hapTasks } from '@ohos/hvigor-ohos-plugin';
@@ -138,7 +142,15 @@ export default {
 }
 ```
 
-**支持多构建目标自动匹配**：通过 `envConfigFiles` 配置不同构建目标对应的环境文件：
+**方式二：使用 `ENVFILE` 环境变量**
+
+```bash
+ENVFILE=.env.dev flutter build hap
+```
+
+**方式三：使用 `envConfigFiles` 自动匹配（推荐）**
+
+通过 `envConfigFiles` 配置不同构建目标对应的环境文件：
 
 ```typescript
 createDotenvPlugin({
@@ -151,7 +163,110 @@ createDotenvPlugin({
 })
 ```
 
-> `envConfigFiles` 会根据 `build-profile.json5` 中的 target 名称自动匹配对应的环境文件。
+> 优先级：`ENVFILE` 环境变量 > `envConfigFiles` 自动匹配 > `envFile` 参数 > 默认 `.env`
+
+#### 4.2 多构建目标（--flavor）配置
+
+鸿蒙端支持 `flutter build hap --flavor <名称>` 切换不同的构建目标，配合 `envConfigFiles` 实现多环境自动匹配。
+
+**构建命令：**
+
+```bash
+# 生产环境（默认）
+flutter build hap
+
+# 开发环境
+flutter build hap --flavor develop
+
+# 预发布环境
+flutter build hap --flavor staging
+```
+
+**配置步骤（以添加 `develop` 构建目标为例）：**
+
+**步骤 1**：准备 `.env` 文件
+
+在 Flutter 项目根目录下创建对应环境的文件：`.env`（生产）、`.env.dev`（开发）、`.env.staging`（预发布）。
+
+**步骤 2**：修改 app 级 `build-profile.json5`（`ohos/build-profile.json5`）
+
+在 `app.products` 中添加 `develop` product，在 `modules` 中为 entry 添加对应 target：
+
+```json5
+{
+  "app": {
+    "products": [
+      { "name": "default", "signingConfig": "default", "compatibleSdkVersion": "5.0.0(12)", "runtimeOS": "HarmonyOS" },
+      { "name": "develop", "signingConfig": "default", "compatibleSdkVersion": "5.0.0(12)", "runtimeOS": "HarmonyOS" }
+    ]
+  },
+  "modules": [
+    {
+      "name": "entry",
+      "srcPath": "./entry",
+      "targets": [
+        { "name": "default", "applyToProducts": ["default"] },
+        { "name": "develop", "applyToProducts": ["develop"] }
+      ]
+    },
+    {
+      "name": "flutter_config",
+      "srcPath": "../../ohos",
+      "targets": [
+        { "name": "default", "applyToProducts": ["default", "develop"] }
+      ]
+    }
+  ]
+}
+```
+
+> **要点**：entry 模块需要为每个 product 创建同名 target，这样 Flutter 工具才能找到正确路径的 HAP 文件；HAR 插件模块只需 `default` target，通过 `applyToProducts` 合并所有 product。
+
+**步骤 3**：修改 entry 级 `build-profile.json5`（`ohos/entry/build-profile.json5`）
+
+在 `targets` 中添加 `develop` target：
+
+```json5
+{
+  "apiType": 'stageMode',
+  "buildOption": {},
+  "targets": [
+    { "name": "default", "runtimeOS": "HarmonyOS" },
+    { "name": "develop", "runtimeOS": "HarmonyOS" },
+    { "name": "ohosTest" }
+  ]
+}
+```
+
+**步骤 4**：配置 `entry/hvigorfile.ts`
+
+使用 `envConfigFiles` 实现 `--flavor` 自动匹配：
+
+```typescript
+import { hapTasks } from '@ohos/hvigor-ohos-plugin';
+const { createDotenvPlugin } = require('./oh_modules/flutter_config/dotenv');
+
+export default {
+  system: hapTasks,
+  plugins: [createDotenvPlugin({
+    entryDir: __dirname,
+    envConfigFiles: {
+      develop: '.env.dev',
+      staging: '.env.staging',
+      production: '.env',
+    }
+  })]
+}
+```
+
+**构建产物路径：**
+
+| 命令 | HAP 输出路径 |
+|---|---|
+| `flutter build hap` | `ohos/entry/build/default/outputs/default/entry-default-signed.hap` |
+| `flutter build hap --flavor develop` | `ohos/entry/build/develop/outputs/develop/entry-develop-signed.hap` |
+
+**PRODUCT 字段：** `--flavor` 传入的名称会自动注入为 `PRODUCT` 环境变量（等同于 Android 的 `BuildConfig.FLAVOR`），无需在 `.env` 中手动定义。Dart 端可通过 `FlutterConfig.get('PRODUCT')` 获取。
 
 ### 5. 系统内置变量
 

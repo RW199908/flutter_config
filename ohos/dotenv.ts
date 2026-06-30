@@ -69,10 +69,23 @@ function resolveProjectDirs(options: DotenvPluginOptions | undefined, pathModule
 }
 
 /**
- * 根据 build-profile.json5 中的 target 名称匹配 envConfigFiles
+ * 根据当前 FLAVOR 或 build-profile.json5 中的 target 名称匹配 envConfigFiles
+ * 优先使用 hvigor 传入的 FLAVOR 参数匹配，回退到 build-profile 解析
  * 匹配失败时返回 null
  */
 function matchEnvConfigFile(entryDir: string, envConfigFiles: Record<string, string>, fsModule: ESObject, pathModule: ESObject): string | null {
+  // 优先从 hvigor 命令行获取 FLAVOR
+  const flavor = getCurrentFlavor();
+  if (flavor) {
+    const flavorLower = flavor.toLowerCase();
+    for (const [key, value] of Object.entries(envConfigFiles)) {
+      if (flavorLower.startsWith(key.toLowerCase()) || key.toLowerCase().startsWith(flavorLower)) {
+        return value;
+      }
+    }
+  }
+
+  // 回退：从 build-profile.json5 解析 target name
   try {
     const buildProfilePath = pathModule.join(entryDir, 'build-profile.json5');
     if (!fsModule.existsSync(buildProfilePath)) {
@@ -162,10 +175,54 @@ function parseEnvContent(content: string): Record<string, string> {
 }
 
 /**
+ * 从 hvigor 命令行参数中获取当前 FLAVOR/product 名称
+ * flutter build hap --flavor develop 会传递 -p FLAVOR=develop
+ * 读取失败时返回空字符串
+ */
+function getCurrentFlavor(): string {
+  try {
+    const args = process.argv || [];
+    for (let i = 0; i < args.length; i++) {
+      const arg = args[i];
+      // 格式1: FLAVOR=develop (作为 -p 的值传递)
+      const flavorMatch = arg.match(/^FLAVOR=(.+)$/);
+      if (flavorMatch) {
+        return flavorMatch[1];
+      }
+      // 格式2: module=xxx@develop 从 module 参数中提取 flavor
+      const moduleMatch = arg.match(/^module=[^@]+@(\w+)/);
+      if (moduleMatch && moduleMatch[1] !== 'default') {
+        return moduleMatch[1];
+      }
+      // 格式3: product=develop (非 default 时)
+      const productMatch = arg.match(/^product=(.+)$/);
+      if (productMatch && productMatch[1] !== 'default') {
+        return productMatch[1];
+      }
+    }
+    // 也检查环境变量
+    if (process.env.FLAVOR) {
+      return process.env.FLAVOR;
+    }
+  } catch (e) {
+    // 解析失败时跳过
+  }
+  return '';
+}
+
+/**
  * 从 build-profile.json5 读取当前 product 名称
+ * 优先使用 hvigor 传入的 FLAVOR 参数，回退到 build-profile 的第一个 product
  * 读取失败时返回空字符串
  */
 function readProductName(entryDir: string, fsModule: ESObject, pathModule: ESObject): string {
+  // 优先从 hvigor 命令行获取当前 FLAVOR
+  const flavor = getCurrentFlavor();
+  if (flavor) {
+    return flavor;
+  }
+
+  // 回退：从 build-profile.json5 读取第一个 product name
   try {
     const appBuildProfilePath = pathModule.join(entryDir, '../build-profile.json5');
     if (!fsModule.existsSync(appBuildProfilePath)) {

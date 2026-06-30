@@ -3,5 +3,12 @@ const { createDotenvPlugin } = require('./oh_modules/flutter_config/dotenv');
 
 export default {
   system: hapTasks,
-  plugins: [createDotenvPlugin({ entryDir: __dirname, envFile: '.env.dev' })]
+  plugins: [createDotenvPlugin({
+    entryDir: __dirname,
+    envConfigFiles: {
+      develop: '.env.dev',
+      staging: '.env.staging',
+      production: '.env',
+    }
+  })]
 }

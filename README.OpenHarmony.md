@@ -126,7 +126,11 @@ FlutterConfig.variables.forEach((key, value) {
 
 Support managing multiple environments through different `.env` files, such as `.env.dev`, `.env.staging`, and `.env` (production).
 
-**OpenHarmony configuration**: Use `createDotenvPlugin` in `entry/hvigorfile.ts` to specify the environment file:
+#### 4.1 Specifying Environment Files
+
+**Option 1: Use `envFile` parameter**
+
+Use `createDotenvPlugin` in `entry/hvigorfile.ts` to specify the environment file:
 
 ```typescript
 import { hapTasks } from '@ohos/hvigor-ohos-plugin';
@@ -138,7 +142,15 @@ export default {
 }
 ```
 
-**Support automatic matching for multiple build targets**: Configure different environment files for different build targets via `envConfigFiles`:
+**Option 2: Use `ENVFILE` environment variable**
+
+```bash
+ENVFILE=.env.dev flutter build hap
+```
+
+**Option 3: Use `envConfigFiles` auto-matching (Recommended)**
+
+Configure different environment files for different build targets via `envConfigFiles`:
 
 ```typescript
 createDotenvPlugin({
@@ -151,7 +163,110 @@ createDotenvPlugin({
 })
 ```
 
-> `envConfigFiles` automatically matches the corresponding environment file based on the target name in `build-profile.json5`.
+> Priority: `ENVFILE` environment variable > `envConfigFiles` auto-matching > `envFile` parameter > default `.env`
+
+#### 4.2 Multi-Build Target (--flavor) Configuration
+
+The OpenHarmony side supports `flutter build hap --flavor <name>` to switch between different build targets, combined with `envConfigFiles` for automatic multi-environment matching.
+
+**Build Commands:**
+
+```bash
+# Production (default)
+flutter build hap
+
+# Development
+flutter build hap --flavor develop
+
+# Staging
+flutter build hap --flavor staging
+```
+
+**Configuration Steps (adding `develop` build target as an example):**
+
+**Step 1:** Prepare `.env` files
+
+Create corresponding environment files in the Flutter project root directory: `.env` (production), `.env.dev` (development), `.env.staging` (staging).
+
+**Step 2:** Modify app-level `build-profile.json5` (`ohos/build-profile.json5`)
+
+Add the `develop` product in `app.products`, and add the corresponding target for entry in `modules`:
+
+```json5
+{
+  "app": {
+    "products": [
+      { "name": "default", "signingConfig": "default", "compatibleSdkVersion": "5.0.0(12)", "runtimeOS": "HarmonyOS" },
+      { "name": "develop", "signingConfig": "default", "compatibleSdkVersion": "5.0.0(12)", "runtimeOS": "HarmonyOS" }
+    ]
+  },
+  "modules": [
+    {
+      "name": "entry",
+      "srcPath": "./entry",
+      "targets": [
+        { "name": "default", "applyToProducts": ["default"] },
+        { "name": "develop", "applyToProducts": ["develop"] }
+      ]
+    },
+    {
+      "name": "flutter_config",
+      "srcPath": "../../ohos",
+      "targets": [
+        { "name": "default", "applyToProducts": ["default", "develop"] }
+      ]
+    }
+  ]
+}
+```
+
+> **Key Points**: The entry module needs a target with the same name as each product so that the Flutter tool can locate the HAP file at the correct path. HAR plugin modules only need the `default` target, using `applyToProducts` to cover all products.
+
+**Step 3:** Modify entry-level `build-profile.json5` (`ohos/entry/build-profile.json5`)
+
+Add the `develop` target in `targets`:
+
+```json5
+{
+  "apiType": 'stageMode',
+  "buildOption": {},
+  "targets": [
+    { "name": "default", "runtimeOS": "HarmonyOS" },
+    { "name": "develop", "runtimeOS": "HarmonyOS" },
+    { "name": "ohosTest" }
+  ]
+}
+```
+
+**Step 4:** Configure `entry/hvigorfile.ts`
+
+Use `envConfigFiles` for automatic `--flavor` matching:
+
+```typescript
+import { hapTasks } from '@ohos/hvigor-ohos-plugin';
+const { createDotenvPlugin } = require('./oh_modules/flutter_config/dotenv');
+
+export default {
+  system: hapTasks,
+  plugins: [createDotenvPlugin({
+    entryDir: __dirname,
+    envConfigFiles: {
+      develop: '.env.dev',
+      staging: '.env.staging',
+      production: '.env',
+    }
+  })]
+}
+```
+
+**Build Output Paths:**
+
+| Command | HAP Output Path |
+|---|---|
+| `flutter build hap` | `ohos/entry/build/default/outputs/default/entry-default-signed.hap` |
+| `flutter build hap --flavor develop` | `ohos/entry/build/develop/outputs/develop/entry-develop-signed.hap` |
+
+**PRODUCT Field:** The `--flavor` name is automatically injected as the `PRODUCT` environment variable (equivalent to Android's `BuildConfig.FLAVOR`), no manual definition in `.env` is required. Access it in Dart via `FlutterConfig.get('PRODUCT')`.
 
 ### 5. Built-in System Variables
 

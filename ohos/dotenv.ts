@@ -37,6 +37,12 @@ interface FsPathModules {
   path: ESObject;
 }
 
+/** createDotenvPlugin 返回的 hvigor 插件对象 */
+interface DotenvPlugin {
+  pluginId: string;
+  apply: () => void;
+}
+
 /** 解析 KEY=VALUE 的正则（与 Android dotenv.gradle 保持一致） */
 const ENV_PATTERN: RegExp = /^\s*(?:export\s+|)([\w\d.\-_]+)\s*=\s*['"]?(.*?)?['"]?\s*$/;
 
@@ -63,8 +69,8 @@ function loadFsPathModules(): FsPathModules | null {
  * 确定 entry 目录和 Flutter 项目根目录
  */
 function resolveProjectDirs(options: DotenvPluginOptions | undefined, pathModule: ESObject): { entryDir: string; projectRoot: string } {
-  const entryDir = options?.entryDir || __dirname;
-  const projectRoot = pathModule.resolve(entryDir, '../..');
+  const entryDir: string = options?.entryDir || __dirname;
+  const projectRoot: string = pathModule.resolve(entryDir, '../..');
   return { entryDir, projectRoot };
 }
 
@@ -74,19 +80,20 @@ function resolveProjectDirs(options: DotenvPluginOptions | undefined, pathModule
  * 匹配失败时返回 null
  */
 function matchEnvConfigFile(entryDir: string, envConfigFiles: Record<string, string>, fsModule: ESObject, pathModule: ESObject): string | null {
-  // 优先从 hvigor 命令行获取 FLAVOR
-  const flavor = getCurrentFlavor();
-  if (flavor) {
-    const flavorLower = flavor.toLowerCase();
-    for (const [key, value] of Object.entries(envConfigFiles)) {
-      if (flavorLower.startsWith(key.toLowerCase()) || key.toLowerCase().startsWith(flavorLower)) {
-        return value;
-      }
-    }
-  }
 
   // 回退：从 build-profile.json5 解析 target name
   try {
+      // 优先从 hvigor 命令行获取 FLAVOR
+    const flavor: string = getCurrentFlavor();
+    if (flavor) {
+      const flavorLower: string = flavor.toLowerCase();
+      for (const [key, value] of Object.entries(envConfigFiles)) {
+        if (flavorLower.startsWith(key.toLowerCase()) || key.toLowerCase().startsWith(flavorLower)) {
+          return value;
+        }
+      }
+    }
+
     const buildProfilePath = pathModule.join(entryDir, 'build-profile.json5');
     if (!fsModule.existsSync(buildProfilePath)) {
       return null;
@@ -158,7 +165,7 @@ function readEnvContent(envFile: string, projectRoot: string, fsModule: ESObject
  */
 function parseEnvContent(content: string): Record<string, string> {
   const envVars: Record<string, string> = {};
-  const lines = content.split('\n');
+  const lines: string[] = content.split('\n');
 
   try {
     for (const line of lines) {
@@ -271,7 +278,7 @@ function writeRawfileEnv(entryDir: string, envVars: Record<string, string>, fsMo
   }
 }
 
-function createDotenvPlugin(options?: DotenvPluginOptions) {
+function createDotenvPlugin(options?: DotenvPluginOptions): DotenvPlugin {
   return {
     pluginId: 'flutter_config_dotenv',
     apply: () => {

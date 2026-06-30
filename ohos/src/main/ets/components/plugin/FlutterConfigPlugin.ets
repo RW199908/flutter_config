@@ -7,6 +7,7 @@ import {
   MethodResult,
 } from '@ohos/flutter_ohos';
 import { util } from '@kit.ArkTS';
+import { resourceManager } from '@kit.ArkTS';
 import bundleManager from '@ohos.bundle.bundleManager';
 
 const TAG: string = "FlutterConfig";
@@ -82,11 +83,11 @@ export default class FlutterConfigPlugin implements FlutterPlugin, MethodCallHan
       return null;
     }
     try {
-      let resMgr = this.binding.getApplicationContext().resourceManager;
+      let resMgr: resourceManager.ResourceManager = this.binding.getApplicationContext().resourceManager;
       let envBytes: Uint8Array = resMgr.getRawFileContentSync('env');
 
       // Uint8Array → UTF-8 string
-      let textDecoder = util.TextDecoder.create('utf-8');
+      let textDecoder: util.TextDecoder = util.TextDecoder.create('utf-8');
       let text: string = textDecoder.decodeToString(envBytes);
 
       // Strip UTF-8 BOM if present (EF BB BF → U+FEFF)
@@ -201,12 +202,12 @@ export default class FlutterConfigPlugin implements FlutterPlugin, MethodCallHan
    */
   private loadEnvVariables(result: MethodResult): void {
     // 1. 从 rawfile 读取 env 变量
-    let rawEnv = this.readRawFileEnv();
+    let rawEnv: Record<string, Object> | null = this.readRawFileEnv();
     let envLoaded: boolean = rawEnv !== null;
     let envVars: Record<string, Object> = rawEnv ?? {};
 
     // 2. 获取系统字段
-    let sys = this.getSystemFields();
+    let sys: SystemFields = this.getSystemFields();
 
     // 3. 仅当既无env变量又无系统字段时返回空Map
     let hasSystemFields: boolean = sys.versionName !== '' || sys.applicationId !== '';
@@ -216,7 +217,7 @@ export default class FlutterConfigPlugin implements FlutterPlugin, MethodCallHan
     }
 
     // 4. 构建返回 Map
-    let envMap = this.buildEnvMap(envVars, sys.versionName, sys.applicationId, sys.versionCode, sys.debug);
+    let envMap: Record<string, Object> = this.buildEnvMap(envVars, sys.versionName, sys.applicationId, sys.versionCode, sys.debug);
 
     // 5. 返回给 Dart
     result.success(envMap);

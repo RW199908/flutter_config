@@ -7,8 +7,8 @@ import {
   MethodResult,
 } from '@ohos/flutter_ohos';
 import { util } from '@kit.ArkTS';
-import { resourceManager } from '@kit.ArkTS';
 import bundleManager from '@ohos.bundle.bundleManager';
+import resourceManager from '@ohos.resourceManager';
 
 const TAG: string = "FlutterConfig";
 

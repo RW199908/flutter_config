@@ -34,10 +34,20 @@ export default class FlutterConfigPlugin implements FlutterPlugin, MethodCallHan
   constructor() {
   }
 
+  /**
+   * 返回插件在 Flutter 引擎中注册时使用的唯一类名
+   *
+   * @returns 插件唯一类名字符串
+   */
   getUniqueClassName(): string {
     return "FlutterConfigPlugin";
   }
 
+  /**
+   * 插件被附加到 Flutter 引擎时回调，创建并注册 MethodChannel
+   *
+   * @param binding - Flutter 插件绑定信息
+   */
   onAttachedToEngine(binding: FlutterPluginBinding): void {
     try {
       this.channel = new MethodChannel(binding.getBinaryMessenger(), "flutter_config");
@@ -48,9 +58,14 @@ export default class FlutterConfigPlugin implements FlutterPlugin, MethodCallHan
     }
   }
 
+  /**
+   * 插件从 Flutter 引擎分离时回调，释放 MethodChannel 与缓存
+   *
+   * @param binding - Flutter 插件绑定信息
+   */
   onDetachedFromEngine(binding: FlutterPluginBinding): void {
     try {
-      if (this.channel != null) {
+      if (this.channel !== null) {
         this.channel.setMethodCallHandler(null);
         this.channel = null;
       }
@@ -61,9 +76,15 @@ export default class FlutterConfigPlugin implements FlutterPlugin, MethodCallHan
     }
   }
 
+  /**
+   * 处理来自 Dart 层的 MethodChannel 调用
+   *
+   * @param call - 方法调用信息，包含方法名与参数
+   * @param result - 方法调用结果回调
+   */
   onMethodCall(call: MethodCall, result: MethodResult): void {
     try {
-      if (call.method == "loadEnvVariables") {
+      if (call.method === "loadEnvVariables") {
         this.loadEnvVariables(result);
       } else {
         result.notImplemented();
@@ -77,6 +98,8 @@ export default class FlutterConfigPlugin implements FlutterPlugin, MethodCallHan
   /**
    * 从 rawfile 读取 env 文件并返回解析后的变量 Map
    * 读取失败时返回 null
+   *
+   * @returns 解析后的环境变量 Map，读取失败时返回 null
    */
   private readRawFileEnv(): Record<string, Object> | null {
     if (this.binding === null) {
@@ -104,6 +127,9 @@ export default class FlutterConfigPlugin implements FlutterPlugin, MethodCallHan
 
   /**
    * 将 env 文本内容解析为 KEY=VALUE 的 Map
+   *
+   * @param text - env 文件文本内容
+   * @returns 解析后的环境变量 Map
    */
   private parseEnvText(text: string): Record<string, Object> {
     let envVars: Record<string, Object> = {};
@@ -121,6 +147,8 @@ export default class FlutterConfigPlugin implements FlutterPlugin, MethodCallHan
   /**
    * 获取系统字段（versionName, applicationId, versionCode, debug）
    * 获取失败时返回默认值
+   *
+   * @returns 系统字段对象，获取失败时返回各字段默认值
    */
   private getSystemFields(): SystemFields {
     try {
@@ -143,6 +171,13 @@ export default class FlutterConfigPlugin implements FlutterPlugin, MethodCallHan
 
   /**
    * 按 Android BuildConfig 字段顺序构建返回 Map
+   *
+   * @param envVars - .env 中解析出的自定义变量
+   * @param versionName - 版本名
+   * @param applicationId - 应用包名
+   * @param versionCode - 版本号
+   * @param debug - 是否为 debug 构建
+   * @returns 按固定顺序排列的环境变量 Map
    */
   private buildEnvMap(
     envVars: Record<string, Object>,
@@ -180,6 +215,8 @@ export default class FlutterConfigPlugin implements FlutterPlugin, MethodCallHan
 
   /**
    * 缓存 envMap 供原生侧静态方法使用
+   *
+   * @param envMap - 待缓存的返回 Map
    */
   private static cacheEnvMap(envMap: Record<string, Object>): void {
     FlutterConfigPlugin.cachedEnv = {};
@@ -199,6 +236,8 @@ export default class FlutterConfigPlugin implements FlutterPlugin, MethodCallHan
    *   1. 读取 .env 文件中的自定义变量
    *   2. 追加 VERSION_NAME、APPLICATION_ID、VERSION_CODE、DEBUG 等系统字段
    *   3. 无 .env 文件时，仍返回系统字段（与安卓 BuildConfig 行为一致）
+   *
+   * @param result - MethodChannel 调用结果回调
    */
   private loadEnvVariables(result: MethodResult): void {
     // 1. 从 rawfile 读取 env 变量
@@ -230,6 +269,8 @@ export default class FlutterConfigPlugin implements FlutterPlugin, MethodCallHan
    * 供鸿蒙原生代码调用的静态方法
    * 类似 iOS 的 FlutterConfigPlugin.env / envFor:
    * 注意：必须在 loadEnvVariables 被调用后才有数据
+   *
+   * @returns 包含所有环境变量的 Map，未加载时返回空对象
    */
   static env(): Record<string, string> {
     try {
@@ -240,6 +281,13 @@ export default class FlutterConfigPlugin implements FlutterPlugin, MethodCallHan
     }
   }
 
+  /**
+   * 根据 key 获取特定环境变量值
+   * 注意：必须在 loadEnvVariables 被调用后才有数据
+   *
+   * @param key - 环境变量的键名
+   * @returns 对应的值，key 不存在或未加载时返回 undefined
+   */
   static envFor(key: string): string | undefined {
     try {
       return FlutterConfigPlugin.cachedEnv[key];

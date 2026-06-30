@@ -1,4 +1,3 @@
-
 {
   "app": {
     "signingConfigs": [],
@@ -7,7 +6,25 @@
         "name": "default",
         "signingConfig": "default",
         "compatibleSdkVersion": "5.0.0(12)",
-        "runtimeOS": "HarmonyOS",
+        "runtimeOS": "HarmonyOS"
+      },
+      {
+        "name": "develop",
+        "signingConfig": "default",
+        "compatibleSdkVersion": "5.0.0(12)",
+        "runtimeOS": "HarmonyOS"
+      },
+      {
+        "name": "staging",
+        "signingConfig": "default",
+        "compatibleSdkVersion": "5.0.0(12)",
+        "runtimeOS": "HarmonyOS"
+      },
+      {
+        "name": "production",
+        "signingConfig": "default",
+        "compatibleSdkVersion": "5.0.0(12)",
+        "runtimeOS": "HarmonyOS"
       }
     ]
   },
@@ -20,6 +37,24 @@
           "name": "default",
           "applyToProducts": [
             "default"
+          ]
+        },
+        {
+          "name": "develop",
+          "applyToProducts": [
+            "develop"
+          ]
+        },
+        {
+          "name": "staging",
+          "applyToProducts": [
+            "staging"
+          ]
+        },
+        {
+          "name": "production",
+          "applyToProducts": [
+            "production"
           ]
         }
       ]
